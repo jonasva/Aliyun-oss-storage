@@ -16,6 +16,8 @@ use OSS\Core\OssException;
 use OSS\OssClient;
 use Log;
 use Symfony\Component\Filesystem\Exception\FileNotFoundException;
+use Jacobcyl\AliOSS\Events\FileUpload;
+use Storage;
 
 class AliOssAdapter extends AbstractAdapter
 {
@@ -74,6 +76,8 @@ class AliOssAdapter extends AbstractAdapter
 
     protected $isCname;
 
+    protected $maxFileSize;
+
     //配置
     protected $options = [
         'Multipart'   => 128
@@ -100,6 +104,7 @@ class AliOssAdapter extends AbstractAdapter
         $isCname = false,
         $debug = false,
         $cdnDomain,
+        $maxFileSize = 6000000,
         $prefix = null,
         array $options = []
     )
@@ -112,6 +117,7 @@ class AliOssAdapter extends AbstractAdapter
         $this->ssl = $ssl;
         $this->isCname = $isCname;
         $this->cdnDomain = $cdnDomain;
+        $this->maxFileSize = $maxFileSize;
         $this->options = array_merge($this->options, $options);
     }
 
@@ -135,6 +141,15 @@ class AliOssAdapter extends AbstractAdapter
         return $this->client;
     }
 
+    public function compatQueueDriver()
+    {
+        if (config('queue.default') == 'sync') {
+            throw new \Exception('OSS file upload error: Queues should be configured to use anything other than sync');
+        }
+
+        return true;
+    }
+
     /**
      * Write a new file.
      *
@@ -155,12 +170,35 @@ class AliOssAdapter extends AbstractAdapter
         if (! isset($options[OssClient::OSS_CONTENT_TYPE])) {
             $options[OssClient::OSS_CONTENT_TYPE] = Util::guessMimeType($path, $contents);
         }
+
+        if (Util::contentSize($contents) > $this->maxFileSize && !Storage::disk('local')->exists($path)) {
+            return $this->queueUpload($path, $contents, $options);
+        }
+
         try {
             $this->client->putObject($this->bucket, $object, $contents, $options);
         } catch (OssException $e) {
             $this->logErr(__FUNCTION__, $e);
             return false;
         }
+
+        return $this->normalizeResponse($options, $path);
+    }
+
+    private function queueUpload($path, $contents, $options)
+    {
+        try {
+            $this->compatQueueDriver();
+        } catch (Exception $e) {
+            $this->logErr(__FUNCTION__, $e);
+            return false;
+        }
+
+        Storage::disk('local')->put($path, $contents, $options);
+
+        $pathParts = pathinfo($path);
+        event(new FileUpload([$pathParts['dirname'], $path, $pathParts['basename']]));
+
         return $this->normalizeResponse($options, $path);
     }
 

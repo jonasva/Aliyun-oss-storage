@@ -9,6 +9,9 @@ Aliyun oss filesystem storage adapter for laravel 5. You can use Aliyun OSS just
 - Laravel 5+
 - cURL extension
 
+## Prerequisite
+- Queues should be configured to use anything other than sync
+
 ##Installation
 In order to install AliOSS-storage, just add
 
@@ -100,5 +103,6 @@ Storage::url('path/to/img.jpg') // get the file url
 
 ## Documentation
 More development detail see [Aliyun OSS DOC](https://help.aliyun.com/document_detail/32099.html?spm=5176.doc31981.6.335.eqQ9dM)
+
 ## License
 Source code is release under MIT license. Read LICENSE file for more information.
